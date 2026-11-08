@@ -1,0 +1,13 @@
+image: python:3.12-slim
+stages: [test]
+variables:
+  PYTHONUTF8: "1"
+test:
+  stage: test
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends ffmpeg
+    - python -m pip install -e ".[ocr,dev]"
+    - python -m pip uninstall -y opencv-python
+    - python -m pip install --force-reinstall --no-deps "opencv-python-headless>=4.8,<5"
+  script:
+    - python -m pytest -q
