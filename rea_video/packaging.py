@@ -1,3 +1,4 @@
+# Modified in rea-video-evidence on 2026-11-10; see UPSTREAM.md.
 # Modified in rea-video-evidence on 2026-11-08; see UPSTREAM.md.
 """Packaging layer (剪辑包装): what an editor puts on top of the picture, on one timeline.
 
@@ -304,30 +305,39 @@ def _band(cy: float) -> str:
     return "top" if cy < 0.22 else ("bottom" if cy > 0.70 else "middle")
 
 
-def ocr_pass(path: str | Path, info: VideoInfo, max_calls: int = OCR_MAX) -> tuple[list[dict], float]:
+def ocr_pass(path: str | Path, info: VideoInfo, max_calls: int = OCR_MAX, *, budget=None) -> tuple[list[dict], float]:
     """OCR the whole video at a fixed rate. Returns (items, step_seconds). Frames that did not change since the
     last OCR'd frame reuse its result."""
+    from .ocr_budget import OCRBudget
+    budget = budget if budget is not None else OCRBudget(max_calls)
     ocr = get_ocr()
-    if ocr is None or info.duration <= 0:
+    if ocr is None:
+        budget.unavailable = True
+    if ocr is None or info.duration <= 0 or budget.limit == 0:
         return [], 0.0
-    fps = min(OCR_FPS, max(0.5, max_calls / info.duration))
+    fps = min(OCR_FPS, budget.limit / info.duration)
     portrait = (info.height > info.width) != (info.rotation in (90, 270))
     width = 720 if portrait else 1280
     items: list[dict] = []
     prev_small, prev = None, []
     for i, f in enumerate(iter_frames(path, info, width, fps=fps)):
+        budget.scanned += 1
         t = round(i / fps, 3)
         H, W = f.shape[:2]
         small = cv2.resize(cv2.cvtColor(f, cv2.COLOR_BGR2GRAY), (192, max(16, int(192 * H / W) // 8 * 8)), interpolation=cv2.INTER_AREA)
         # reuse the last result only if no 8x8 block changed (a new subtitle line is a small local change)
         if prev_small is not None and small.shape == prev_small.shape and float(
                 cv2.absdiff(small, prev_small).reshape(small.shape[0] // 8, 8, small.shape[1] // 8, 8).mean(axis=(1, 3)).max()) < 2.0:
+            budget.reused += 1
             items += [dict(it, t=t) for it in prev]
             continue
         prev_small = small
+        if not budget.take():
+            break
         try:
             res, _ = ocr(f)
         except Exception as exc:  # pragma: no cover
+            budget.failed += 1
             LOG.debug("ocr failed at %.2f: %s", t, exc)
             res = None
         cur = []
@@ -1352,10 +1362,12 @@ def layer_name(e: dict) -> str:
 # ----------------------------------------------------------------------------- top level
 
 def analyze(path: str | Path, info: VideoInfo, cuts: list[float], out_dir: Path | None = None, ocr: bool = True,
-            speech: bool | None = None) -> dict:
+            speech: bool | None = None, ocr_budget=None) -> dict:
     """Whole-video packaging pass: text cues (subtitles / 花字 / titles / labels) and stickers. speech=False (no voice
     in the audio) rules out keywords lighting up as they are said."""
-    items, step = ocr_pass(path, info) if ocr else ([], 0.0)
+    from .ocr_budget import OCRBudget
+    ocr_budget = ocr_budget if ocr_budget is not None else OCRBudget(OCR_MAX)
+    items, step = ocr_pass(path, info, budget=ocr_budget) if ocr else ([], 0.0)
     cues = build_cues(items, step) if items else []
     for k, c in enumerate(sorted(cues, key=lambda c: (c["t0"], c["bbox"][1])), 1):
         c["id"] = f"text_{k:03d}"
@@ -1425,7 +1437,7 @@ def analyze(path: str | Path, info: VideoInfo, cuts: list[float], out_dir: Path 
         kinds[c["kind"]] = kinds.get(c["kind"], 0) + 1
     # the raw OCR hits go back to the caller for the per-shot text (popped before the breakdown is written)
     return {"_ocr_items": items, "text_cues": cues, "stickers": stickers, "ocr": {"step_s": round(step, 3), "frames": int(round(info.duration / step)) if step else 0,
-                                                            "dense_step_s": round(dstep, 3)},
+                                                            "dense_step_s": round(dstep, 3), **ocr_budget.summary(enabled=ocr)},
             "counts": {"text": kinds, "stickers": len(stickers)}}
 
 

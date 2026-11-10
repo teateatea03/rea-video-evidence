@@ -4,6 +4,10 @@ Modified for rea-video-evidence, 2026-11-08; see [attribution](https://github.co
 
 SKILL.md 分析流程的補充：以下記錄目前工具的融合行為，不是來源鑑定的保證。若任務檔內嵌說明與 SKILL.md 的證據界線不同，以實際可觀察證據及 SKILL.md 為準；不因工具採納某類別就宣稱已證實。
 
+## 答案綁定與相容
+
+新版模板保留 binding、time 與具體 evidence；機率拒絕 NaN／Infinity、布林值與負值。apply-review 會核對來源、分鏡及圖片雜湊，來源檔仍在時也重算全檔 SHA-256。舊答案預設拒絕；保留舊檔，另做報告複本再產生模板，或明確加 --allow-legacy 並標記未綁定。套用或雜湊通過不證明實際看圖。更換既有答案時保留 review_history。
+
 ## 融合规则
 
 实测得来（仓库 `eval/RESULTS.md`）：

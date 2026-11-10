@@ -1,9 +1,11 @@
 """Production plan: AI shots grouped into generation units, filmed shots into shooting setups."""
+import re
 from pathlib import Path
 
 import cv2
 import numpy as np
 
+from rea_video.i18n import set_lang
 from rea_video.plan import Planner
 from rea_video.production import _limits, _split_run, pick_model, production_plan
 
@@ -120,3 +122,14 @@ def test_framing_goes_into_capsule_prompt():
     assert _with_framing("女生在厨房切菜", zh) == zh + "。女生在厨房切菜"
     assert _with_framing("近景，略俯拍，主体在画面下部左侧，镜头推，切菜", zh).startswith("近景，略俯拍，主体")  # nothing added twice
     assert _with_framing("", zh) == ""
+
+
+def test_english_engine_note_has_no_chinese(tmp_path):
+    set_lang("en")
+    try:
+        plan = production_plan(_b([_shot(1, 0.0, 3.0, "ai_video", KITCHEN, tmp_path)]), tmp_path)
+    finally:
+        set_lang("zh")
+    note = plan["engine_note"]
+    assert "shot by shot, 1 time." in note
+    assert not re.search(r"[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]", note + plan["model_name"])

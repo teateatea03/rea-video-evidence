@@ -21,7 +21,7 @@ rea-video evidence "./analysis-01" --pending --limit 4 --offset 4
 ```
 
 - 範圍採 `[start, end)`，包含與時段相交的鏡頭；保留鏡頭原始起迄時間。範圍必須介於 0 與影片總長之間，NaN／Infinity、反向範圍與不合理預算回傳 exit 2。
-- `--query` 是不分大小寫的文字子字串搜尋，最多 200 字；不是正規表示式、語意搜尋或語音辨識。畫面看得到但 OCR 未記錄的文字可能找不到，零結果不證明畫面／聲音沒有該內容。
+- `--query` 是不分大小寫的文字子字串搜尋，最多 200 字；不是正規表示式或語意搜尋，也不會即時語音辨識；匯入 transcript.json 後才額外搜尋 spoken，與 OCR 分開。畫面看得到但 OCR 未記錄的文字可能找不到，零結果不證明畫面／聲音沒有該內容。
 - 預設每頁 8 鏡，`--limit` 為 1–100；每鏡最多 8 條 OCR 與有限長度的證據摘要。較完整內容仍在原報告；截短的項目會標示，不把前幾筆當全量。
 - JSON 寫入檔案時使用 UTF-8。Windows PowerShell 5 的裸 `>` 會轉為 UTF-16；使用 `| Out-File -Encoding utf8 "./evidence.json"`，或由程式直接保存 CLI 的 UTF-8 stdout bytes。
 
@@ -31,7 +31,7 @@ rea-video evidence "./analysis-01" --pending --limit 4 --offset 4
 2. `pagination.matched` 是再套用關鍵字／pending 條件的鏡頭數；`returned` 是本頁數，`next_offset` 有值時可繼續。不要混淆影片範圍、命中數與本頁覆蓋。
 3. 每鏡有 `citation`（ID＋原始時間）、分類與不確定性、測量證據、Agent 複核、OCR 與圖片絕對路徑。`query_matches.origin` 指出命中來自測量、Agent、OCR 或分類，引用時保留來源。
 4. 圖片狀態：`available` 只是檔案存在；`missing` 缺檔；`not_recorded` 未輸出；`outside_report` 拒絕引用報告目錄外的圖片。只檢查本頁列出的圖片，不能據此宣稱整份報告完整。實際開圖後才算視覺複核。
-5. `breakdown_sha256` 綁定本次證據包的原始 JSON 快照。apply-review 後 JSON 改變，查詢須重新產生；這不是原影片的完整 SHA-256。來源中的 `sha256_head` 仍是上游的部分檔案雜湊。
+5. `breakdown_sha256` 綁定本次證據包的原始 JSON 快照。apply-review 後 JSON 改變，查詢須重新產生；這不是原影片的完整 SHA-256。新版來源另含完整 `sha256`；`sha256_head` 僅為舊版相容的部分檔案雜湊。
 6. `vlm_status` 與 `agent_review.applied` 分開；`audio.listening_verification=not_recorded` 表示報告未記錄聽音驗證，不從有音軌／有複核推定已聽音。OCR 保持為畫面文字，不寫成已核對台詞。
 
 需要複核時，依結果的圖片路徑實際開圖，在既有 review_answers.json 補上有看過的鏡頭，再 apply-review。使用分頁優先完成與使用者問題相關的部分；覆蓋不足時直接說明，不加任意全片通過門檻。

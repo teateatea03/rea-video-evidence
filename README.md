@@ -16,6 +16,12 @@ This is an independently maintained derivative of [JuneYaooo/rea-video](https://
 
 The underlying shot detection, production classification, OCR, report generation and remake planning come from upstream. Classification scores are hypotheses, not proof of how a video was made.
 
+## New in 0.2
+
+Source-bound reviews reject wrong-source answers and invalid probabilities. OCR has a shared hard call budget and explicit failure states. SRT/VTT import and optional local ASR add spoken-text search. New `doctor`, `inspect`, `chapters --resume` and `validate-claims` commands provide diagnostics, focused evidence and resumable long-video indexing. Full-size shot retention is bounded; English formatting includes the upstream fix.
+
+See [commands, compatibility and limits](docs/workflows.md). Chapters indexes sampled evidence; it does not resume full classification. ASR requires an existing local model and never downloads one. Native report languages remain zh/en.
+
 ## Install
 
 Requirements: Python 3.10+, FFmpeg and FFprobe on PATH. Use a dedicated environment; this distribution shares the `rea_video` module and `rea-video` command with upstream.
@@ -56,7 +62,7 @@ rea-video evidence "out/reference-01" --query "product" --limit 4
 rea-video evidence "out/reference-01" --pending --limit 4
 ```
 
-`evidence` is read-only: no decoding, model calls, credential loading or persistent memory writes. It searches existing OCR/tool/review text, not speech or unobserved image semantics. A zero result does not prove absence. Ranges are half-open `[start,end)`; use `pagination.next_offset` with `--offset` to continue.
+`evidence` is read-only: no decoding, model calls, credential loading or persistent memory writes. It searches existing OCR/tool/review text and imported transcript segments, with spoken text separate from screen text. It does not infer unobserved image semantics or run speech recognition during a query. A zero result does not prove absence. Ranges are half-open `[start,end)`; use `pagination.next_offset` with `--offset` to continue.
 
 An agent that can inspect images can run:
 

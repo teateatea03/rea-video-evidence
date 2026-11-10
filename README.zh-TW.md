@@ -16,6 +16,12 @@
 
 底層切鏡、製作分類、OCR、報告與重製規劃承自上游；分類分數是推測，不是製作來源的鑑定證明。
 
+## 0.2 新增補強
+
+複核答案綁定來源、分鏡與圖片，拒絕錯片及無效機率；OCR 共用硬性呼叫預算並回報失敗狀態。支援 SRT/VTT 匯入及選配本地 ASR，台詞與畫面 OCR 分開查詢。新增 `doctor`、`inspect`、`chapters --resume`、`validate-claims`，提供環境診斷、按需補幀、可續跑的長片索引與引用檢查；限制同時保留的完整鏡頭影格，並移植上游英文格式修正。
+
+[指令、相容性與限制](docs/workflows.md)：chapters 是抽樣證據索引，不是完整分類的續跑；ASR 需已有本地模型，不會自行下載。原生報告語言仍為 zh/en。
+
 ## 安裝
 
 需要 Python 3.10+，以及 PATH 中可用的 FFmpeg／FFprobe。請使用獨立環境；本專案與上游共用 `rea_video` 模組與 `rea-video` 指令。
@@ -56,7 +62,7 @@ rea-video evidence "out/reference-01" --query "商品" --limit 4
 rea-video evidence "out/reference-01" --pending --limit 4
 ```
 
-`evidence` 只讀取既有報告，不重新解碼、不呼叫模型、不載入憑證、不寫長期記憶。關鍵字只搜尋已有 OCR／工具／複核文字，並非語音辨識或畫面語意搜尋；零結果不代表片中沒有。時間採 `[start,end)`，用 `pagination.next_offset` 與 `--offset` 接續。
+`evidence` 只讀取既有報告，不重新解碼、不呼叫模型、不載入憑證、不寫長期記憶。關鍵字搜尋已有 OCR／工具／複核文字及已匯入的字幕段落；查詢時不做語音辨識或畫面語意搜尋；零結果不代表片中沒有。時間採 `[start,end)`，用 `pagination.next_offset` 與 `--offset` 接續。
 
 能看圖的 Agent 可執行：
 

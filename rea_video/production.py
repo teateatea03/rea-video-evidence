@@ -1,3 +1,4 @@
+# Modified in rea-video-evidence on 2026-11-10; see UPSTREAM.md.
 # Modified in rea-video-evidence on 2026-11-08; see UPSTREAM.md.
 """From per-shot breakdown to a production plan: how the shots would actually be made again.
 
@@ -11,7 +12,7 @@ Edit shots (cut detection) are the facts; making them is organised differently:
 """
 from __future__ import annotations
 
-from .i18n import LangDict, T, join, semi
+from .i18n import LangDict, T, join, model_name, semi
 
 from pathlib import Path
 
@@ -301,7 +302,7 @@ def _unit(seg: list[dict], k: int, lim: dict, model: dict | None, style: str, ca
     unit = {"id": f"G{k}", "kind": "generate", "label": label, "label_zh": LABEL_ZH[label],
             "shots": [r["index"] for r in seg], "start": round(t0, 3), "end": round(t1, 3), "duration": dur,
             "ranges": [[round(a, 3), round(z, 3)] for a, z in ranges],
-            "mode": mode, "calls": parts, "model": (model or {}).get("id"), "model_name": (model or {}).get("name"),
+            "mode": mode, "calls": parts, "model": (model or {}).get("id"), "model_name": model_name((model or {}).get("name")),
             "generate_s": max(dur, lim["min"], unit_min if len(seg) == 1 else 0), "refs": refs, "continuity": cont,
             "prompt": T("。", ". ").join(head) + T("。\n", ".\n") + "\n".join(lines),
             "prompt_en": "\n".join(lines_en) if len(lines_en) == len(seg) else "",
@@ -402,7 +403,7 @@ def production_plan(b: dict, out: Path, engine: str = "seedance2.0") -> dict:
     units.sort(key=lambda u: u["start"])
     for k, u in enumerate(units, 1):
         u["id"] = f"G{k}"
-    plan: dict = {"model": (model or {}).get("id"), "model_name": (model or {}).get("name"),
+    plan: dict = {"model": (model or {}).get("id"), "model_name": model_name((model or {}).get("name")),
                   "model_limits": {k: lim[k] for k in ("max", "min", "multi_shot", "ref_video", "native_audio")},
                   "rules": {"hardcut_s": hard, "same_scene_distance": thr}, "units": units}
     gen_shots = sum(len(u["shots"]) for u in units)
@@ -412,9 +413,9 @@ def production_plan(b: dict, out: Path, engine: str = "seedance2.0") -> dict:
         plan["gen_shots"] = gen_shots
         if eng and model and eng["id"] != model["id"]:
             plan["engine_note"] = T("默认引擎 {e} 不支持一次多镜头，用它要逐镜生成 {n} 次；这里按 {m} 规划（单次 ≤{mx:.0f}s、可一次出多镜头），共 {c} 次",
-                                    "The default engine {e} cannot generate several shots in one call; with it you would generate shot by shot, {n} times. "
+                                    "The default engine {e} cannot generate several shots in one call; with it you would generate shot by shot, {n} time{ns}. "
                                     "This plan is for {m} (≤{mx:.0f}s per call, multi-shot in one call), {c} call{cs} in total",
-                                    e=eng["name"], n=gen_shots, m=model["name"], mx=lim["max"], c=calls, cs=_s(calls))
+                                    e=model_name(eng["name"]), n=gen_shots, ns=_s(gen_shots), m=model_name(model["name"]), mx=lim["max"], c=calls, cs=_s(calls))
         voice = ((b.get("audio") or {}).get("voice") or {}).get("present")
         if lim["native_audio"]:
             plan["audio_note"] = T("模型可以同时生成动作音效和环境声", "the model can generate action sound effects and ambience along with the picture") + \

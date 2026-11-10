@@ -1,3 +1,4 @@
+# Modified in rea-video-evidence on 2026-11-10; see UPSTREAM.md.
 """Container-level provenance: camera tags, encoder/editor signatures, AIGC labels, C2PA.
 
 Metadata is strong evidence when present (an iPhone make/model tag means camera footage
@@ -169,9 +170,9 @@ def provenance(info: VideoInfo) -> dict:
         # cameras (Pixel, Leica ...) sign C2PA too: only a generator named alongside the manifest counts as AI
         named = hints["generator_weak"]
         evidence.append({"kind": "c2pa", "detail": T("发现 C2PA/JUMBF 内容凭证盒", "C2PA / JUMBF content-credential box found")
-                         + (f"（{', '.join(named)}）" if named else ""), "weight": "strong" if named else "medium"})
+                         + (T("（{n}）", " ({n})", n=", ".join(named)) if named else ""), "weight": "strong" if named else "medium"})
         if named:
-            hints["generator"].append(T("C2PA 凭证", "C2PA credential") + "：" + ", ".join(n.rstrip("?") for n in named))
+            hints["generator"].append(T("C2PA 凭证", "C2PA credential") + T("：", ": ") + ", ".join(n.rstrip("?") for n in named))
     if hints["camera"]:
         evidence.append({"kind": "camera_tags", "detail": "; ".join(hints["camera"][:4]), "weight": "strong"})
 

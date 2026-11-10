@@ -1,3 +1,4 @@
+# Modified in rea-video-evidence on 2026-11-10; see UPSTREAM.md.
 """Shot boundary detection: hard cuts, fades through black/white, dissolves, wipes.
 
 Works on tiny thumbnails of every frame (cheap) and combines a colour-histogram
@@ -29,6 +30,7 @@ class FrameTrack:
     thumbs: list[np.ndarray] = field(repr=False, default_factory=list)  # small gray thumbs, uint8 (for dissolve check)
     hists: list[np.ndarray] = field(repr=False, default_factory=list)
     times: np.ndarray | None = field(repr=False, default=None)  # per-frame pts (s) for variable frame rate; None = i / fps
+    timestamp_info: dict = field(default_factory=dict)
 
     @property
     def n(self) -> int:
@@ -104,8 +106,10 @@ def build_track(path: str, info: VideoInfo) -> FrameTrack:
         hists.append(h)
         prev_h, prev_g = h, g
     fps = info.fps if info.fps > 0 else 30.0
+    timing = {}
+    times = frame_times(path, len(luma), fps, details=timing)
     return FrameTrack(fps=fps, hist_dist=np.array(hist_d), pix_diff=np.array(pix_d), changed=np.array(chg), luma=np.array(luma),
-                      thumbs=thumbs, hists=hists, times=frame_times(path, len(luma), fps))
+                      thumbs=thumbs, hists=hists, times=times, timestamp_info=timing)
 
 
 def _local_median(x: np.ndarray, radius: int) -> np.ndarray:

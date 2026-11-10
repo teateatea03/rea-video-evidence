@@ -1,3 +1,4 @@
+# Modified in rea-video-evidence on 2026-11-10; see UPSTREAM.md.
 """Overlay layers: things composited on top of the base picture.
 
 1. Static overlays: pixels that stay frozen while the rest of the shot changes
@@ -131,9 +132,11 @@ def static_overlays(frames: list[np.ndarray]) -> dict:
     return out
 
 
-def ocr_frames(frames: list[np.ndarray], times: list[float], max_frames: int = 4) -> list[dict]:
+def ocr_frames(frames: list[np.ndarray], times: list[float], max_frames: int = 4, *, budget=None) -> list[dict]:
     ocr = get_ocr()
     if ocr is None or not frames:
+        if budget is not None and ocr is None:
+            budget.unavailable = True
         return []
     idx = np.unique(np.linspace(0, len(frames) - 1, num=min(max_frames, len(frames))).round().astype(int))
     results = []
@@ -144,9 +147,15 @@ def ocr_frames(frames: list[np.ndarray], times: list[float], max_frames: int = 4
         if w < 720:  # upscale small analysis frames for better CJK recognition
             scale = 720 / w
             f = cv2.resize(f, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        if budget is not None:
+            budget.scanned += 1
+            if not budget.take():
+                break
         try:
             res, _ = ocr(f)
         except Exception as exc:  # pragma: no cover
+            if budget is not None:
+                budget.failed += 1
             LOG.debug("ocr failed: %s", exc)
             continue
         for box, text, conf in res or []:

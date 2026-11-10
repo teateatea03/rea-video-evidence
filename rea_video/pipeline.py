@@ -1,3 +1,4 @@
+# Modified in rea-video-evidence on 2026-11-10; see UPSTREAM.md.
 # Modified in rea-video-evidence on 2026-11-08; see UPSTREAM.md.
 """decompose(): the end-to-end reverse-engineering pass for one video."""
 from __future__ import annotations
@@ -73,6 +74,10 @@ def decompose(video: str | Path, out_dir: str | Path, *, use_vlm: bool = False, 
     out = Path(out_dir).expanduser().resolve()
     (out / "shots").mkdir(parents=True, exist_ok=True)
     info = video_info(video)
+    from .integrity import digest
+    from .ocr_budget import OCRBudget
+    source_sha256 = digest(video)
+    ocr_budget = OCRBudget(240)
     prov = provenance(info)
     LOG.info("video %s %dx%d %.2ffps %.2fs", video.name, info.width, info.height, info.fps, info.duration)
 
@@ -98,7 +103,7 @@ def decompose(video: str | Path, out_dir: str | Path, *, use_vlm: bool = False, 
 
         LOG.info("packaging layer: subtitle timeline, 花字, stickers%s", "" if ocr else " (no OCR: stickers only)")
         pack = analyze_packaging(video, info, [s.start for s in shots[1:]], out, ocr=ocr,
-                                 speech=bool((audio.get("voice") or {}).get("present")) if audio.get("has_audio") else False)
+                                 speech=bool((audio.get("voice") or {}).get("present")) if audio.get("has_audio") else False, ocr_budget=ocr_budget)
         if info.has_audio:
             ev = [e for e in visual_events(pack["text_cues"], pack["stickers"], []) if e["type"] != "subtitle_in"]
             pack["sfx_anchored"] = anchored_sfx(video, ev, (audio.get("sfx") or {}).get("events", []))
@@ -108,10 +113,9 @@ def decompose(video: str | Path, out_dir: str | Path, *, use_vlm: bool = False, 
 
     shot_records: list[dict] = []
     template_frames: list[np.ndarray] = []
-    samples_by_shot = {}
-    for s in shots:
+    # Bound retained full-sized samples; later shots are processed one at a time.
+    for s in shots[:30]:
         smp = collect_samples(str(video), info, s)
-        samples_by_shot[s.index] = smp
         if smp.frames:
             template_frames.extend([smp.frames[0], smp.frames[-1]])
     template = persistent_template(template_frames[:60]) if len(shots) >= 2 else {"frozen_ratio": 0.0, "boxes": []}
@@ -121,7 +125,7 @@ def decompose(video: str | Path, out_dir: str | Path, *, use_vlm: bool = False, 
     still_pool = ThreadPoolExecutor(max_workers=4)
     stills = []
     for s in shots:
-        smp = samples_by_shot[s.index]
+        smp = collect_samples(str(video), info, s)
         crop = clean_region(pack["stickers"], s.start, s.end) if pack else None
         # a film / TV clip letterboxed into the frame: black bars read as flat, frozen, few-colour "rendered" pixels,
         # so the picture is measured inside its box
@@ -139,7 +143,7 @@ def decompose(video: str | Path, out_dir: str | Path, *, use_vlm: bool = False, 
         if ocr:
             hits = shot_ocr_items(ocr_items, ocr_step, s.start, s.end)
             if hits is None:  # no whole-video pass, or too sparse here: read a few of this shot's own frames
-                hits = ocr_frames(smp.frames, smp.frame_times, max_frames=shot_ocr_frames(s.duration))
+                hits = ocr_frames(smp.frames, smp.frame_times, max_frames=shot_ocr_frames(s.duration), budget=ocr_budget)
             text = summarize_text(hits)
         else:
             text = {"tracks": [], "text_coverage": 0.0, "items": []}
@@ -267,7 +271,7 @@ def decompose(video: str | Path, out_dir: str | Path, *, use_vlm: bool = False, 
 
     breakdown = {
         "schema": SCHEMA, "tool": {"name": "rea-video", "version": __version__}, "lang": lang,
-        "source": {"path": str(video), "filename": video.name, "sha256_head": _sha256_head(video), "width": info.width,
+        "source": {"path": str(video), "filename": video.name, "sha256": source_sha256, "sha256_head": _sha256_head(video), "width": info.width,
                    "height": info.height, "fps": round(info.fps, 3), "duration": round(info.duration, 3), "vcodec": info.vcodec,
                    "aspect_ratio": info.aspect_ratio, "has_audio": info.has_audio, "rotation": info.rotation},
         "provenance": {k: v for k, v in prov.items() if k != "tags"}, "summary": {},
@@ -278,7 +282,12 @@ def decompose(video: str | Path, out_dir: str | Path, *, use_vlm: bool = False, 
         "stems": {k: (Path(v).name if k in ("original", "vocals", "music") else v) for k, v in stem_info.items()},
         "per_clip_audio": per_clip_audio(str(video), [s.start for s in shots[1:]], info.duration) if info.has_audio else {},
     }
+    breakdown["analysis"]["ocr_details"] = ocr_budget.summary(enabled=ocr)
+    breakdown["analysis"]["timestamps"] = track.timestamp_info
+    if digest(video) != source_sha256:
+        raise ValueError("source changed during analysis")
     if pack is not None:
+        pack["ocr"].update(ocr_budget.summary(enabled=ocr))
         breakdown["packaging"] = round_floats(pack)
     if memory:
         from .memory import reapply

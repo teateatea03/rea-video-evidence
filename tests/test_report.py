@@ -99,6 +99,15 @@ def test_markdown_without_vlm_still_complete(breakdown):
         set_lang("zh")
 
 
+def test_english_markdown_has_no_chinese_punctuation(media, tmp_path):
+    try:
+        md_en = markdown(decompose(media["edit"], tmp_path / "edit", use_vlm=False, ocr=False, stems=False, lang="en"))
+    finally:
+        set_lang("zh")
+    assert "Probabilities: " in md_en
+    assert not re.findall(r"[（）：，、；]", md_en)
+
+
 def test_html_is_rendered_from_markdown(breakdown):
     b, _ = breakdown
     set_lang("zh")

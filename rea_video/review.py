@@ -4,6 +4,8 @@ into the breakdown so the summary, reports and replication plan reflect what the
 """
 from __future__ import annotations
 
+# Modified in rea-video-evidence on 2026-11-10; see UPSTREAM.md.
+import math
 import re
 import shlex
 import time
@@ -31,8 +33,7 @@ INSTRUCTIONS = f"""你是这次的 VLM：逐个镜头看图，判断「底层画
 1. 先看 storyboard.jpg 建立整体印象；每个镜头看 images 里的 sheet（首/中/尾联系表，一张就够，不用另开首尾帧）。
    要细看时运行顶层的 zoom_cmd，把 {{start}} {{end}} {{id}} 换成该镜头的值。
 2. priority=high 的镜头（低置信、次选接近、转码后实拍/AI 待确认）一定要看；其余镜头也尽量都答。
-3. common_evidence 是整片共有的工具证据（帧率、转码），每镜 tool.evidence 里不再重复。只依据画面证据，独立判断（这里不给 VLM 的答案，它会在融合时单独计入）。tool 一栏是确定性取证的结果，可能有误，但帧率类证据（24→30 重复帧）和 AIGC 标识可靠，
-   和画面印象冲突时不要轻易推翻（见 SKILL.md「平台转码视频」）。
+3. common_evidence 是整片共有的工具证据（帧率、转码），每镜 tool.evidence 里不再重复。只依据画面证据，独立判断（这里不给 VLM 的答案，它会在融合时单独计入）。tool 一栏是工具测量与推测，可能有误。重复帧也可能来自相机、电影或转码，不能单独证明 AI；AIGC 标识需核对作用范围。冲突时记录正反证据与缺口，不把分类分数当来源证明。
 4. 看不出就把概率分散开，例如 ai_video 0.55 / live_action 0.45，并在 evidence 写清缺什么证据。
 5. 没看过的镜头不要填（label_probs 保持 {{}}），apply-review 会跳过它。
 
@@ -178,6 +179,8 @@ def build_tasks(breakdown: dict, out_dir: str) -> tuple[dict, dict]:
                         "scenes": [{"id": "S1", "where": "", "when": "", "look": "", "shots": []}], "props": [{"name": "", "note": "", "shots": []}]}}
     if pk_answers:
         answers["packaging"] = pk_answers
+    from .integrity import binding
+    tasks["binding"] = answers["binding"] = binding(breakdown, out_dir)
     return tasks, answers
 
 
@@ -191,6 +194,8 @@ def _clean_split(sp) -> tuple[dict | None, str | None]:
         return None, "split_suggestion 的 cuts / labels 要是列表"
     try:
         cuts = [float(c) for c in cuts_in]
+        if any(isinstance(c, bool) or not math.isfinite(v) for c, v in zip(cuts_in, cuts)):
+            return None, "split_suggestion.cuts must be finite numbers"
     except (TypeError, ValueError):
         return None, "split_suggestion.cuts 里有不是数字的秒点"
     bad = [x for x in labels_in if x not in LABELS]
@@ -201,17 +206,24 @@ def _clean_split(sp) -> tuple[dict | None, str | None]:
 
 def _clean(ans: dict) -> tuple[dict | None, str | None]:
     probs = ans.get("label_probs") or {}
+    if not isinstance(probs, dict):
+        return None, "label_probs must be an object"
     bad = [k for k in probs if k not in LABELS]
     if bad:
         return None, f"未知类别 {bad}（可选：{', '.join(LABELS)}）"
     vals = {}
     for k in LABELS:
         try:
-            vals[k] = max(0.0, float(probs.get(k, 0) or 0))
+            value = probs.get(k, 0)
+            if isinstance(value, bool):
+                return None, f"{k}: boolean probability is invalid"
+            vals[k] = float(value)
+            if not math.isfinite(vals[k]) or vals[k] < 0:
+                return None, f"{k}: probability must be finite and non-negative"
         except (TypeError, ValueError):
             return None, f"{k} 的概率不是数字"
     total = sum(vals.values())
-    if total <= 0:
+    if not math.isfinite(total) or total <= 0:
         return None, "label_probs 全为 0（没作答），跳过"
     u = 1.0 / len(LABELS)
     soft = {k: AGENT_WEIGHT * v / total + (1 - AGENT_WEIGHT) * u for k, v in vals.items()}
@@ -234,13 +246,23 @@ def _clean(ans: dict) -> tuple[dict | None, str | None]:
                          if isinstance(e, dict) and e.get("kind") in EDIT_KINDS]}, None
 
 
-def apply_answers(breakdown: dict, answers: dict, by: str | None = None) -> dict:
+def apply_answers(breakdown: dict, answers: dict, by: str | None = None, *, report_dir=None, allow_legacy=False) -> dict:
     """Store answers on the shots (rec["review"]) and return a change log. Call finalize() afterwards."""
+    from .integrity import validate_binding
+    if not isinstance(answers, dict) or not isinstance(answers.get("shots", []), list):
+        raise ValueError("review answers must contain a shots array")
+    binding_status = validate_binding(breakdown, answers, report_dir, allow_legacy)
+    ids = [a.get("id") for a in answers.get("shots", []) if isinstance(a, dict)]
+    if len(ids) != len(answers.get("shots", [])) or any(not isinstance(i, str) for i in ids) or len(ids) != len(set(ids)):
+        raise ValueError("review shots must be objects with unique string ids")
     by = by or answers.get("by") or "agent"
     recs = {r["id"]: r for r in breakdown["shots"]}
     applied, problems, changes, unanswered = [], [], [], []
     for ans in answers.get("shots") or []:
         sid = ans.get("id")
+        if not isinstance(ans.get("label_probs", {}), dict):
+            problems.append(f"{sid}: label_probs must be an object")
+            continue
         if sid in recs and not any((ans.get("label_probs") or {}).values()):
             unanswered.append(sid)  # left blank on purpose: listed once, not as a problem per shot
             continue
@@ -251,9 +273,28 @@ def apply_answers(breakdown: dict, answers: dict, by: str | None = None) -> dict
         if err:
             problems.append(f"{sid}: {err}")
             continue
+        if "binding" in answers:
+            images = answers["binding"].get("images", {})
+            if not images.get(f"{sid}:sheet"):
+                problems.append(f"{sid}: review sheet is missing")
+                continue
+        evidence = ans.get("evidence")
+        if not isinstance(evidence, list) or not any(isinstance(e, str) and e.strip() for e in evidence):
+            problems.append(f"{sid}: concrete evidence is required")
+            continue
+        if "binding" in answers and ans.get("time") != f"{recs[sid]['start']:.2f}-{recs[sid]['end']:.2f}":
+            problems.append(f"{sid}: review time does not match")
+            continue
         clean["_by"] = by
+        clean["_binding_status"] = binding_status
+        clean["_time"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         rec = recs[sid]
         before = rec["base"]["label"]
+        if clean.get("split_suggestion") and any(not rec["start"] < c < rec["end"] for c in clean["split_suggestion"]["cuts"]):
+            problems.append(f"{sid}: split cut outside shot")
+            continue
+        if rec.get("review") and rec["review"] != clean:
+            rec.setdefault("review_history", []).append(rec["review"])
         rec["review"] = clean
         applied.append(sid)
         changes.append((sid, before))
@@ -277,4 +318,4 @@ def apply_answers(breakdown: dict, answers: dict, by: str | None = None) -> dict
         breakdown["review_cast"] = cast
     breakdown.setdefault("analysis", {})["review"] = {"by": by, "shots": len(applied), "of": len(breakdown["shots"]),
                                                        "time": time.strftime("%Y-%m-%d %H:%M"), "problems": problems}
-    return {"applied": applied, "problems": problems, "unanswered": unanswered, "before": dict(changes)}
+    return {"applied": applied, "problems": problems, "unanswered": unanswered, "before": dict(changes), "binding_status": binding_status}

@@ -31,6 +31,12 @@ The evidence handoff was informed by these public designs; no code from these pr
 - [Open Vision: scoped JSON/frame handoff](https://github.com/michielhdoteth/openvision/blob/084d02957516cd55dd53eee1a6ba720c6f64100a/README.md)
 - [PySceneDetect: adaptive cut detection](https://github.com/Breakthrough/PySceneDetect/blob/f1ae68409725440fc406acd76f1ea78a3128d99a/scenedetect/detectors/adaptive_detector.py), studied but not transplanted.
 
+## Changes made on 2026-11-10 (0.2.0)
+
+Added integrity, OCR-budget, transcript, inspection, diagnostic and CLI adapter modules and regression tests. Modified review input validation/binding/history; shared OCR budgeting and status in packaging/overlay/pipeline; bounded retained full-size shot samples; full source hashes; indexed OCR/spoken retrieval; timestamp fallback metadata and decode error checks in media/shots; optional ASR packaging and CLI routes. Updated the skill, four READMEs and evidence workflow documentation.
+
+Ported upstream [a82fcacf016b0bb584c7a5e9d74ed950b6a37ace](https://github.com/JuneYaooo/rea-video/commit/a82fcacf016b0bb584c7a5e9d74ed950b6a37ace), by Christopher Pruijsen and JuneYaooo, for English formatting in i18n/plan/probe/production/report and its regression tests. Apache-2.0 credit is retained. New workflow designs also reference the SHA-pinned sources in docs/workflows.md; no code from those separate projects was copied. No classification weights or shot-detection thresholds were changed.
+
 ## Distribution boundaries
 
 Upstream reference videos, case GIFs, user outputs, local logs, credentials, caches and model weights are not included. Tests generate their own fixtures. Optional third-party model downloads remain separate assets with their own terms. See [validation notes](docs/validation.md) for what was actually tested.

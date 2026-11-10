@@ -1,3 +1,4 @@
+# Modified in rea-video-evidence on 2026-11-10; see UPSTREAM.md.
 """Turn a classified shot into a replication plan: which capability rule applies, which
 models are candidates, and how capsule-cinema (or local ffmpeg) would execute it."""
 from __future__ import annotations
@@ -7,7 +8,7 @@ from pathlib import Path
 
 import yaml
 
-from .i18n import LangDict, T, join, semi
+from .i18n import LangDict, T, join, model_name, semi
 
 CAP = Path(__file__).resolve().parent / "capabilities"
 
@@ -266,7 +267,7 @@ class Planner:
                 continue
             zh, rule_id, how = AI_EDITS[e["kind"]]
             zh_en, how_en = AI_EDITS_EN[e["kind"]]
-            names = [self.models[m]["name"] for m in (self.rules.get(rule_id) or {}).get("prefer", [])
+            names = [model_name(self.models[m]["name"]) for m in (self.rules.get(rule_id) or {}).get("prefer", [])
                      if m in self.models and self.models[m]["status"] != "shutdown"][:3]
             out.append({"kind": e["kind"], "kind_zh": T(zh, zh_en), "evidence": str(e.get("evidence", ""))[:120], "rule": rule_id,
                         "how": T(how, how_en) + (T("（{n}）", " ({n})", n=" / ".join(names)) if names else "")})
@@ -275,7 +276,7 @@ class Planner:
     def plan_shot(self, label: str, shot: dict, video: dict, engine: str = "seedance2.0") -> dict:
         rule_id, executor, gen_type = LABEL_ROUTE.get(label, ("R14-ambient-broll", "capsule_cinema", "text_to_video"))
         rule = self.rules.get(rule_id, {})
-        candidates = [{"id": m, "name": self.models[m]["name"], "status": self.models[m]["status"]}
+        candidates = [{"id": m, "name": model_name(self.models[m]["name"]), "status": self.models[m]["status"]}
                       for m in rule.get("prefer", []) if m in self.models and self.models[m]["status"] != "shutdown"]
         plan = {"label": label, "rule": rule_id, "route": rule.get("route", []), "candidates": candidates,
                 "verify": rule.get("verify", []), "executor": executor, "note": NOTE.get(label, "")}

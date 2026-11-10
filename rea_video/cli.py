@@ -1,3 +1,4 @@
+# Modified in rea-video-evidence on 2026-11-10; see UPSTREAM.md.
 # Modified in rea-video-evidence on 2026-11-08; see UPSTREAM.md.
 """rea-video command line."""
 from __future__ import annotations
@@ -103,7 +104,7 @@ def cmd_apply_review(args) -> int:
     answers = read_json(Path(args.answers) if args.answers else out / "review_answers.json")
     from .memory import pref
 
-    log = apply_answers(b, answers, by=args.by or pref("reviewer"))
+    log = apply_answers(b, answers, by=args.by or pref("reviewer"), report_dir=out, allow_legacy=args.allow_legacy)
     b = finalize(b, out)
     for p in log["problems"]:
         print(f"跳过 {p}")
@@ -511,7 +512,7 @@ def main(argv: list[str] | None = None) -> int:
     ev.add_argument("breakdown", help="breakdown.json 或报告目录")
     ev.add_argument("--start", type=float, default=0.0)
     ev.add_argument("--end", type=float)
-    ev.add_argument("--query", default="", help="搜索 OCR、测量证据与已并入的看图描述；不是语音识别")
+    ev.add_argument("--query", default="", help="搜索 OCR、测量、看图描述与已导入字幕；查询时不做语音识别")
     ev.add_argument("--pending", action="store_true", help="只列未并入 Agent 复核的镜头，高优先镜头在前")
     ev.add_argument("--limit", type=int, default=8, help="每页镜头数，1–100，默认 8")
     ev.add_argument("--offset", type=int, default=0, help="下一页位置，默认 0")
@@ -529,6 +530,7 @@ def main(argv: list[str] | None = None) -> int:
     ar = sub.add_parser("apply-review", help="把 agent 看图的答案并入结论，重写 breakdown.json 和报告")
     ar.add_argument("out_dir")
     ar.add_argument("answers", nargs="?", help="答案文件（默认 <out_dir>/review_answers.json）")
+    ar.add_argument("--allow-legacy", action="store_true", help="Explicitly accept an old unbound answer file; recorded as legacy_unbound")
     ar.add_argument("--by", help="复核者名字（写进报告）")
     ar.add_argument("--lang", choices=LANGS, help="在这一步换报告语言：结论、证据和报告文字重新生成，VLM 已写好的描述和提示词保持原语言")
     ar.set_defaults(func=cmd_apply_review)
@@ -555,12 +557,14 @@ def main(argv: list[str] | None = None) -> int:
     me.add_argument("--export-labels", metavar="YAML")
     me.set_defaults(func=cmd_memory)
 
+    from .commands import register
+    register(sub)
     for sp in sub.choices.values():  # also accept `rea-video decompose x.mp4 --env-file ...`
         sp.add_argument("--env-file", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
 
     args = ap.parse_args(argv)
     setup_logging(args.verbose)
-    if args.cmd != "evidence":  # inspecting saved evidence needs no .env or user prefs
+    if args.cmd not in ("evidence", "doctor", "transcript", "asr", "inspect", "chapters", "validate-claims"):  # inspecting saved evidence needs no .env or user prefs
         _env(args)
     from .media import MediaError
 
@@ -574,6 +578,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"rea-video: {exc}{hint}", file=sys.stderr)
         if args.verbose:
             raise
+        return 2
+    except ValueError as exc:
+        if args.verbose:
+            raise
+        print(f"rea-video: {exc}", file=sys.stderr)
         return 2
     except FileNotFoundError as exc:  # wrong path to a video / breakdown.json / answers file
         if args.verbose:

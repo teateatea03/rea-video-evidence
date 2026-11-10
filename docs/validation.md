@@ -9,11 +9,19 @@ python -m pytest -q
 python scripts/validate_capabilities.py
 ```
 
-The release suite includes 204 upstream/evidence tests plus four installer tests. Tests generate media locally and isolate `REA_VIDEO_HOME`; they do not require a paid VLM. GitHub CI exercises Linux and Windows; GitLab CI requires an available runner.
+The 0.2 release suite contains 242 tests: the 208 original/upstream/evidence/installer cases, two upstream English regressions and 32 hardening/edge cases. Tests generate media locally and isolate `REA_VIDEO_HOME`; they do not require a paid VLM. GitHub CI exercises Linux and Windows; GitLab CI requires an available runner.
 
 The installer checks include a Unicode destination, an existing destination that must remain untouched, CODEX_HOME routing and rejection of recursive copies. Unicode image tests cover actual element-image production as well as round trips and failure behavior.
 
-## Observed local checks before packaging
+## 0.2 validation (2026-11-10)
+
+A fresh dedicated Python 3.12 environment passed all 242 tests. After requiring a complete local ASR tokenizer/config to prevent backend fallback downloads, the affected 32 hardening/edge tests passed again. The wheel built successfully and the skill validator passed.
+
+Real CLI smoke outside the repository covered doctor, silent generated-video decompose, Unicode SRT import and spoken search, decoded-PTS focused sampling, a ten-minute synthetic video's five chapter indexes and verified resume. A rendered OCR card was recognized by actual RapidOCR with a one-call budget. These are functional checks, not general video/ASR/classification accuracy or speed benchmarks. Model bindings were tested with an isolated ASR adapter; no real ASR weights or speech transcription, paid VLM, listening review or hour-long memory benchmark was run.
+
+Four project-owned routing cases are in eval/promptfooconfig.yaml. Run qtools eval eval/promptfooconfig.yaml only with an explicitly selected PROMPTFOO_PROVIDER and a bounded provider budget. No provider-backed evaluation was run for this release, so model routing quality remains unmeasured; schema/fixture tests do not substitute for it.
+
+## Observed 0.1 local checks before packaging
 
 On one 19-second, 10-shot upstream sample:
 - Unicode image I/O previously left the storyboard missing and 78 JSON image references unresolved; the fix produced the storyboard, five element sheets and three sticker images, with no unresolved references in that run.

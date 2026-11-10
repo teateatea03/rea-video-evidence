@@ -1,3 +1,4 @@
+# Modified in rea-video-evidence on 2026-11-10; see UPSTREAM.md.
 """FFmpeg/ffprobe wrappers. Frames are read through an ffmpeg rawvideo pipe so every
 codec ffmpeg understands (h264/hevc/vp9/prores...) works the same on macOS and Linux."""
 from __future__ import annotations
@@ -139,23 +140,29 @@ def scaled_size(info: VideoInfo, width: int) -> tuple[int, int]:
     return width, max(2, height)
 
 
-def frame_times(path: str | Path, n: int, fps: float) -> np.ndarray | None:
+def frame_times(path: str | Path, n: int, fps: float, details: dict | None = None) -> np.ndarray | None:
     """Real timestamps (s, from 0) of the n frames iter_frames passes through, read from packet pts
     (no decoding). None when they match frame / fps to within half a frame (constant frame rate; the
     caller keeps index / fps) or when the packet count does not line up with the decoded frames."""
+    details = details if details is not None else {}
+    details.update(method="index_fps", status="estimated", reason="insufficient_frames")
     if n < 2 or fps <= 0:
         return None
     try:
         out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time",
-                              "-of", "csv=p=0", str(path)], capture_output=True, text=True, timeout=120).stdout
+                              "-of", "csv=p=0", str(path)], capture_output=True, text=True, timeout=120, check=True).stdout
         pts = sorted(float(x.strip().rstrip(",")) for x in out.split() if x.strip().rstrip(",") not in ("", "N/A"))
     except (OSError, ValueError, subprocess.SubprocessError):
+        details["reason"] = "packet_probe_failed"
         return None
-    if len(pts) != n:
+    if len(pts) != n or any(not np.isfinite(p) for p in pts):
+        details["reason"] = "packet_frame_count_mismatch_or_invalid_pts"
         return None
     t = np.asarray(pts) - pts[0]
     if np.max(np.abs(t - np.arange(n) / fps)) <= 0.5 / fps:
+        details.update(method="index_fps", status="packet_aligned_cfr", reason=None)
         return None
+    details.update(method="packet_pts", status="packet_aligned", reason=None)
     return t
 
 
@@ -208,12 +215,11 @@ def iter_frames(
             arr = np.frombuffer(buf, dtype=np.uint8)
             count += 1
             yield arr.reshape((h, w)) if gray else arr.reshape((h, w, 3))
-        if count == 0:
-            proc.wait()
+        code = proc.wait()
+        if count == 0 or code != 0:
             errf.seek(0)
             err = errf.read()[-4000:].decode(errors="ignore")
-            if err.strip():
-                raise MediaError(f"ffmpeg decoded no frames: {err.strip()[:300]}")
+            raise MediaError(f"ffmpeg decode incomplete (frames={count}, exit={code}): {err.strip()[:300]}")
     finally:
         proc.stdout.close()
         proc.kill()

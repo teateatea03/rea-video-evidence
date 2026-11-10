@@ -1,0 +1,45 @@
+description: REA skill routing regression cases (real provider required; four cases)
+prompts:
+  - |
+    Use the following REA skill to choose the next safe action for the supplied task.
+    This is a routing evaluation: do not execute commands or claim to inspect files.
+    Skill:
+    {{skill}}
+    Task:
+    {{task}}
+    Return only JSON with action, command_family, evidence_kind, verified_listening,
+    and reason. action is request_local_source, inspect_frames, reject_review, or query_evidence.
+providers:
+  - '{{ env.PROMPTFOO_PROVIDER }}'
+defaultTest:
+  vars:
+    skill: file://../skills/rea-video/SKILL.md
+  assert:
+    - type: is-json
+tests:
+  - description: Missing local video must not become a thumbnail analysis
+    vars:
+      task: Only a web link is provided. No authorized local copy or download tool is available. Explain how this video was made.
+    assert:
+      - type: javascript
+        value: 'JSON.parse(output).action === "request_local_source" && JSON.parse(output).verified_listening === false'
+  - description: A manifest is not actual viewing
+    vars:
+      task: A focused inspection manifest for seconds 4 to 6 lists available image paths. No image has been opened. Determine whether a hand deforms.
+    assert:
+      - type: javascript
+        value: 'JSON.parse(output).action === "inspect_frames" && JSON.parse(output).verified_listening === false'
+  - description: Same shot ID with different source binding
+    vars:
+      task: Apply-review rejected source A answers for source B although both use shot_001. The binding hashes differ. Can we still merge them as verified?
+    assert:
+      - type: javascript
+        value: 'JSON.parse(output).action === "reject_review" && JSON.parse(output).verified_listening === false'
+  - description: Imported subtitles are spoken text, not verified listening
+    vars:
+      task: A source-bound transcript.json was imported from supplied subtitles. Locate a literal phrase in the existing report. No one has listened to the audio.
+    assert:
+      - type: javascript
+        value: 'JSON.parse(output).action === "query_evidence" && JSON.parse(output).command_family === "evidence" && JSON.parse(output).evidence_kind === "spoken" && JSON.parse(output).verified_listening === false'
+evaluateOptions:
+  maxConcurrency: 1

@@ -9,6 +9,7 @@ Use Python 3.10+ and FFmpeg/FFprobe on PATH. Clone this edition, create a dedica
 ```sh
 python -m pip install -e ".[dev]"
 rea-video --help
+rea-video doctor --json
 python scripts/install_skill.py --agent codex
 ```
 

@@ -1,3 +1,4 @@
+# Modified in rea-video-evidence on 2026-11-10; see UPSTREAM.md.
 """Human-readable reports from a breakdown: report.md, and report.html rendered from the same Markdown.
 
 Reading order is short-first, long-last: verdict and numbers → what the video says (structure, script) → who / where
@@ -420,7 +421,7 @@ def packaging_md(b: dict) -> list[str]:
                 why.append(T("跨切镜不变", "unchanged across a cut"))
             if st.get("disappears_mid_shot"):
                 why.append(T("镜头中途出现又消失", "appears and disappears mid-shot"))
-            conf = CONF_ZH.get(st.get("confidence"), st.get("confidence", "")) + (("（" + join(why) + "）") if why else "")
+            conf = CONF_ZH.get(st.get("confidence"), st.get("confidence", "")) + (T("（{w}）", " ({w})", w=join(why)) if why else "")
             rows.append([f"{st['t0']:.2f}–{st['t1']:.2f}s", st["kind_zh"], where, dyn, conf, f"![{st['id']}]({st['image']})" if st.get("image") else "—"])
         L += ["", T("**贴纸 / 动图 / 画中画**", "**Stickers / GIFs / picture-in-picture**")]
         L += _table([T("时间", "Time"), T("类型", "Kind"), T("位置", "Position"), T("动态", "Motion"), T("置信", "Confidence"), T("截图", "Crop")], rows)
@@ -496,7 +497,7 @@ def _shot_detail_md(r: dict) -> list[str]:
     base = r["base"]
     L = [f"![{r['id']}]({r['assets']['sheet']})", ""]
     probs = sorted(base["probs"].items(), key=lambda kv: -kv[1])[:3]
-    L.append(T("- 概率：", "- Probabilities: ") + T("，", ", ").join(f"{LABEL_ZH[k]} {v:.0%}" for k, v in probs) + f"（{base['decided_by']}）")
+    L.append(T("- 概率：", "- Probabilities: ") + T("，", ", ").join(f"{LABEL_ZH[k]} {v:.0%}" for k, v in probs) + T("（{d}）", " ({d})", d=base["decided_by"]))
     for key, name in (("uncertain", T("待确认", "To confirm")), ("disputed", T("有分歧", "Disputed"))):
         if base.get(key):
             L.append(f"- ⚠️ {name}{_colon()}{base[key]}")
